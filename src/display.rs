@@ -76,39 +76,21 @@ fn print_bold(text: &str) {
 
 fn render_command_fancy(command: &str) {
     let mut stdout = io::stdout();
-    let border = "\u{2500}".repeat(50);
+    let sep = "\u{2500}".repeat(9);
 
     let _ = execute!(
         stdout,
         SetForegroundColor(Color::Green),
-        SetAttribute(Attribute::Bold),
-        Print(format!("\u{256d}{}\u{256e}\n", border)),
-        SetAttribute(Attribute::Reset),
-        ResetColor,
-    );
-
-    let _ = execute!(
-        stdout,
-        SetForegroundColor(Color::Green),
-        Print("\u{2502} "),
-        ResetColor,
-    );
-    let _ = execute!(
-        stdout,
-        SetForegroundColor(Color::White),
+        Print(format!("{} ", sep)),
         SetAttribute(Attribute::Bold),
         Print("Command"),
         SetAttribute(Attribute::Reset),
+        SetForegroundColor(Color::Green),
+        Print(format!(" {}\n", sep)),
         ResetColor,
     );
     println!();
 
-    let _ = execute!(
-        stdout,
-        SetForegroundColor(Color::Green),
-        Print("\u{2502} "),
-        ResetColor,
-    );
     let _ = execute!(
         stdout,
         SetForegroundColor(Color::Cyan),
@@ -118,42 +100,22 @@ fn render_command_fancy(command: &str) {
         ResetColor,
     );
     println!();
-
-    let _ = execute!(
-        stdout,
-        SetForegroundColor(Color::Green),
-        SetAttribute(Attribute::Bold),
-        Print(format!("\u{2570}{}\u{256f}\n", border)),
-        SetAttribute(Attribute::Reset),
-        ResetColor,
-    );
 }
 
 fn render_explanation_fancy(explanation: &str) {
     let mut stdout = io::stdout();
-    let border = "\u{2500}".repeat(50);
+    let sep = "\u{2500}".repeat(7);
 
+    println!();
     let _ = execute!(
         stdout,
         SetForegroundColor(Color::Blue),
-        SetAttribute(Attribute::Bold),
-        Print(format!("\u{256d}{}\u{256e}\n", border)),
-        SetAttribute(Attribute::Reset),
-        ResetColor,
-    );
-
-    let _ = execute!(
-        stdout,
-        SetForegroundColor(Color::Blue),
-        Print("\u{2502} "),
-        ResetColor,
-    );
-    let _ = execute!(
-        stdout,
-        SetForegroundColor(Color::White),
+        Print(format!("{} ", sep)),
         SetAttribute(Attribute::Bold),
         Print("Explanation"),
         SetAttribute(Attribute::Reset),
+        SetForegroundColor(Color::Blue),
+        Print(format!(" {}\n", sep)),
         ResetColor,
     );
     println!();
@@ -163,39 +125,22 @@ fn render_explanation_fancy(explanation: &str) {
 
     for line in explanation.lines() {
         let stripped = line.trim_end();
-        let _ = execute!(
-            stdout,
-            SetForegroundColor(Color::Blue),
-            Print("\u{2502} "),
-            ResetColor,
-        );
-
         if sub_bullet_re.is_match(stripped) {
             let content = Regex::new(r"^\s+[-\u{25c6}]\s*")
                 .unwrap()
                 .replace(stripped, "");
             print_colored(Color::Cyan, "  \u{25c6} ");
-            print!("{}", content);
+            println!("{}", content);
         } else if top_bullet_re.is_match(stripped) {
             let content = Regex::new(r"^[-\u{25cb}]\s*")
                 .unwrap()
                 .replace(stripped, "");
             print_colored(Color::Yellow, "\u{25cb} ");
-            print!("{}", content);
+            println!("{}", content);
         } else if !stripped.is_empty() {
-            print!("{}", stripped);
+            println!("{}", stripped);
         }
-        println!();
     }
-
-    let _ = execute!(
-        stdout,
-        SetForegroundColor(Color::Blue),
-        SetAttribute(Attribute::Bold),
-        Print(format!("\u{2570}{}\u{256f}\n", border)),
-        SetAttribute(Attribute::Reset),
-        ResetColor,
-    );
 }
 
 fn render_command_simple(command: &str) {
