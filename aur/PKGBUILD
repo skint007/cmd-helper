@@ -7,7 +7,7 @@ arch=('x86_64')
 url="https://github.com/skint007/cmd-helper"
 license=('MIT')
 depends=('gcc-libs')
-makedepends=('cargo')
+makedepends=('cargo' 'gcc')
 optdepends=(
     'jq: JSON processing commands'
     'tree: directory tree listing'
@@ -29,6 +29,10 @@ _srcdir="/home/skint007/Dropbox/projects/rust/cmd-helper"
 
 build() {
     cd "$_srcdir"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    # Prevent makepkg's CFLAGS/LDFLAGS from breaking bundled C compilation (SQLite)
+    unset CFLAGS CXXFLAGS LDFLAGS
     cargo build --release --locked
 }
 

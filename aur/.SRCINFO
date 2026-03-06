@@ -6,6 +6,7 @@ pkgbase = cmd-helper
 	arch = x86_64
 	license = MIT
 	makedepends = cargo
+	makedepends = gcc
 	depends = gcc-libs
 	optdepends = jq: JSON processing commands
 	optdepends = tree: directory tree listing
