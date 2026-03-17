@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use regex::Regex;
 
@@ -30,23 +31,34 @@ fn detect_shell() -> String {
     "bash".to_string()
 }
 
+fn detect_powershell_profile() -> Option<PathBuf> {
+    // Try pwsh (PowerShell 7+) first, then powershell (Windows PowerShell 5.1)
+    for cmd in &["pwsh", "powershell"] {
+        if let Ok(output) = Command::new(cmd)
+            .args(["-NoProfile", "-Command", "echo $PROFILE"])
+            .output()
+        {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() {
+                    return Some(PathBuf::from(path));
+                }
+            }
+        }
+    }
+    None
+}
+
 fn get_rc_file(shell: &str) -> PathBuf {
     let home = dirs::home_dir().expect("Cannot determine home directory");
     match shell {
         "zsh" => home.join(".zshrc"),
         "fish" => home.join(".config").join("fish").join("config.fish"),
-        "powershell" => {
-            if let Ok(profile) = env::var("USERPROFILE") {
-                PathBuf::from(profile)
-                    .join("Documents")
-                    .join("PowerShell")
-                    .join("Microsoft.PowerShell_profile.ps1")
-            } else {
-                home.join("Documents")
-                    .join("PowerShell")
-                    .join("Microsoft.PowerShell_profile.ps1")
-            }
-        }
+        "powershell" => detect_powershell_profile().unwrap_or_else(|| {
+            home.join("Documents")
+                .join("PowerShell")
+                .join("Microsoft.PowerShell_profile.ps1")
+        }),
         _ => home.join(".bashrc"),
     }
 }

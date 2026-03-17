@@ -27,12 +27,16 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[command(
     name = "cmd-helper",
     about = "AI-powered command-line helper.\n\nAsk a question in natural language and get the right shell command.\n\nExamples:\n  cmd-helper find files larger than 100MB\n  cmd-helper how to compress a directory with tar\n  ?? list all docker containers",
-    version = VERSION,
+    disable_version_flag = true,
 )]
 struct Cli {
     /// Natural language query
     #[arg(trailing_var_arg = true)]
     query: Vec<String>,
+
+    /// Print version and check for updates
+    #[arg(short = 'V', long = "version")]
+    version: bool,
 
     /// Ollama model name
     #[arg(short, long)]
@@ -102,6 +106,11 @@ async fn main() {
     );
 
     let mut config = Config::load(overrides);
+
+    if cli.version {
+        print_version().await;
+        return;
+    }
 
     if cli.init_config {
         if let Err(e) = config.save_default_config() {
@@ -332,4 +341,38 @@ async fn create_model_cmd(config: &Config) {
     spinner.finish_and_clear();
     println!();
     print_success(&format!("Model '{}' created successfully!", model_name));
+}
+
+async fn print_version() {
+    println!("cmd-helper v{}", VERSION);
+
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .build()
+        .ok();
+
+    let latest = async {
+        let resp = client?
+            .get("https://api.github.com/repos/skint007/cmd-helper/releases/latest")
+            .header("User-Agent", "cmd-helper")
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+            .ok()?;
+        let json: serde_json::Value = resp.json().await.ok()?;
+        json["tag_name"].as_str().map(|s| s.trim_start_matches('v').to_string())
+    }
+    .await;
+
+    match latest {
+        Some(ref tag) if tag != VERSION => {
+            println!("Latest:  v{}", tag);
+        }
+        Some(_) => {
+            print_success("You are on the latest version.");
+        }
+        None => {
+            print_dim("Could not check for updates.");
+        }
+    }
 }
