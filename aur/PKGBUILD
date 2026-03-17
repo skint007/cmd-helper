@@ -1,6 +1,6 @@
 # Maintainer: skint007
 pkgname=cmd-helper
-pkgver=1.0.1
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="AI-powered command-line helper using Ollama"
 arch=('x86_64')
