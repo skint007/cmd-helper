@@ -38,7 +38,11 @@ pub struct Config {
 }
 
 fn default_model() -> String {
-    "command-helper".to_string()
+    if cfg!(target_os = "windows") {
+        "command-helper-windows".to_string()
+    } else {
+        "command-helper".to_string()
+    }
 }
 fn default_timeout() -> u64 {
     10

@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 
 use crate::config::Config;
 
-pub const MODEL_SYSTEM_PROMPT: &str = r#"You are a command-line assistant for Arch Linux. Your job is to translate natural language questions into precise shell commands.
+const LINUX_SYSTEM_PROMPT: &str = r#"You are a command-line assistant for Arch Linux. Your job is to translate natural language questions into precise shell commands.
 
 RULES:
 1. Always respond with EXACTLY two sections: COMMAND and EXPLANATION. Never add extra sections, alternatives, tips, or summaries.
@@ -32,13 +32,63 @@ EXPLANATION
   - <flag/argument> <what it does>
   - <flag/argument> <what it does>"#;
 
-pub fn model_few_shot_messages() -> Vec<Value> {
+const WINDOWS_SYSTEM_PROMPT: &str = r#"You are a command-line assistant for Windows. Your job is to translate natural language questions into precise PowerShell commands.
+
+RULES:
+1. Always respond with EXACTLY two sections: COMMAND and EXPLANATION. Never add extra sections, alternatives, tips, or summaries.
+2. The COMMAND section contains ONLY the PowerShell command(s), nothing else. If multiple commands are needed, separate them with ; or use a pipeline.
+3. The EXPLANATION section uses bullet points to break down every part of the command:
+   - Start each top-level bullet with the cmdlet name and a brief description of what it does.
+   - Use indented sub-bullets for each parameter or argument, explaining what it does.
+4. Be precise and concise. Do not include unnecessary parameters.
+5. All commands must be PowerShell. Use native PowerShell cmdlets (Get-ChildItem, Get-Process, etc.) instead of legacy cmd.exe commands when a PowerShell equivalent exists.
+6. Prefer PowerShell conventions and standard Windows paths (e.g., $env:USERPROFILE, $env:APPDATA, C:\).
+7. If a question is ambiguous, provide the most common/safe interpretation for Windows.
+8. Never include warnings, caveats, or conversational text outside the two sections.
+9. Never wrap the command in markdown code fences.
+10. Give exactly ONE command solution. Never provide multiple alternatives or methods.
+
+FORMAT (follow exactly):
+COMMAND
+<the PowerShell command>
+
+EXPLANATION
+- <cmdlet_name> <what it does>
+  - <parameter> <what it does>
+  - <parameter> <what it does>"#;
+
+pub fn model_system_prompt() -> &'static str {
+    if cfg!(target_os = "windows") {
+        WINDOWS_SYSTEM_PROMPT
+    } else {
+        LINUX_SYSTEM_PROMPT
+    }
+}
+
+fn linux_few_shot_messages() -> Vec<Value> {
     vec![
         json!({"role": "user", "content": "find a file named \"report.txt\" in the current directory"}),
         json!({"role": "assistant", "content": "COMMAND\nfind . -name \"report.txt\"\n\nEXPLANATION\n- find searches for files and directories in a directory hierarchy.\n  - . specifies the current directory as the starting point.\n  - -name \"report.txt\" matches files whose name is exactly report.txt."}),
         json!({"role": "user", "content": "how to list a directory tree 1 level deep"}),
         json!({"role": "assistant", "content": "COMMAND\ntree -L 1\n\nEXPLANATION\n- tree displays the directory structure in a tree-like format.\n  - -L 1 limits the display depth to 1 level, showing only immediate children."}),
     ]
+}
+
+fn windows_few_shot_messages() -> Vec<Value> {
+    vec![
+        json!({"role": "user", "content": "find a file named \"report.txt\" in the current directory"}),
+        json!({"role": "assistant", "content": "COMMAND\nGet-ChildItem -Recurse -Filter \"report.txt\"\n\nEXPLANATION\n- Get-ChildItem lists items in a directory.\n  - -Recurse searches all subdirectories.\n  - -Filter \"report.txt\" matches files whose name is exactly report.txt."}),
+        json!({"role": "user", "content": "how to list a directory tree 1 level deep"}),
+        json!({"role": "assistant", "content": "COMMAND\nGet-ChildItem | Format-Table Name, Mode\n\nEXPLANATION\n- Get-ChildItem lists items in the current directory (one level by default).\n- Format-Table displays the output as a table.\n  - Name, Mode shows the file/folder name and its attributes."}),
+    ]
+}
+
+pub fn model_few_shot_messages() -> Vec<Value> {
+    if cfg!(target_os = "windows") {
+        windows_few_shot_messages()
+    } else {
+        linux_few_shot_messages()
+    }
 }
 
 #[derive(Debug)]
@@ -194,7 +244,7 @@ impl OllamaClient {
         let payload = json!({
             "model": model_name,
             "from": "gpt-oss:20b",
-            "system": MODEL_SYSTEM_PROMPT,
+            "system": model_system_prompt(),
             "parameters": {
                 "temperature": 0.3,
                 "top_p": 0.9,
