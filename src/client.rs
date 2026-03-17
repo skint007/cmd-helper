@@ -80,6 +80,7 @@ impl OllamaClient {
 
         let http = Client::builder()
             .default_headers(headers)
+            .connect_timeout(std::time::Duration::from_secs(10))
             .redirect(reqwest::redirect::Policy::limited(10))
             .build()
             .expect("Failed to create HTTP client");
@@ -109,25 +110,18 @@ impl OllamaClient {
         });
 
         let url = format!("{}/api/generate", self.base_url);
-        let timeout = std::time::Duration::from_secs(self.config.ollama_timeout);
 
         let response: reqwest::Response = self
             .http
             .post(&url)
-            .timeout(timeout)
             .json(&payload)
             .send()
             .await
             .map_err(|e: reqwest::Error| {
-                if e.is_connect() {
+                if e.is_connect() || e.is_timeout() {
                     OllamaError::Connection(format!(
                         "Cannot connect to Ollama at {}. Is the server running?\n  Error: {}",
                         self.base_url, e
-                    ))
-                } else if e.is_timeout() {
-                    OllamaError::Timeout(format!(
-                        "Request timed out after {}s. Try increasing ollama_timeout in config.",
-                        self.config.ollama_timeout
                     ))
                 } else {
                     OllamaError::Api(format!("HTTP error: {}", e))
@@ -150,12 +144,20 @@ impl OllamaClient {
 
         let (tx, rx) = mpsc::channel(64);
         let mut stream = response.bytes_stream();
+        let read_timeout = std::time::Duration::from_secs(self.config.ollama_timeout);
 
         tokio::spawn(async move {
             let mut buffer = String::new();
-            while let Some(chunk_result) = stream.next().await {
-                let Ok(ref bytes) = chunk_result else { break };
-                buffer.push_str(&String::from_utf8_lossy(bytes));
+            loop {
+                let chunk_result = tokio::time::timeout(read_timeout, stream.next()).await;
+                match chunk_result {
+                    Err(_) => break, // read timeout elapsed between chunks
+                    Ok(None) => break, // stream ended
+                    Ok(Some(Err(_))) => break, // stream error
+                    Ok(Some(Ok(ref bytes))) => {
+                        buffer.push_str(&String::from_utf8_lossy(bytes));
+                    }
+                }
 
                 while let Some(newline_pos) = buffer.find('\n') {
                     let line = buffer[..newline_pos].to_string();
