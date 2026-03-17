@@ -12,6 +12,7 @@ const ALIAS_BEGIN: &str = "# BEGIN cmd-helper";
 const ALIAS_END: &str = "# END cmd-helper";
 const ALIAS_BASH_ZSH: &str = "alias '??'='cmd-helper'";
 const ALIAS_FISH: &str = "alias '??' 'cmd-helper'";
+const ALIAS_POWERSHELL: &str = "Set-Alias -Name '??' -Value 'cmd-helper'";
 
 fn detect_shell() -> String {
     if let Ok(shell) = env::var("SHELL") {
@@ -23,6 +24,9 @@ fn detect_shell() -> String {
             return name;
         }
     }
+    if cfg!(target_os = "windows") {
+        return "powershell".to_string();
+    }
     "bash".to_string()
 }
 
@@ -31,15 +35,27 @@ fn get_rc_file(shell: &str) -> PathBuf {
     match shell {
         "zsh" => home.join(".zshrc"),
         "fish" => home.join(".config").join("fish").join("config.fish"),
+        "powershell" => {
+            if let Ok(profile) = env::var("USERPROFILE") {
+                PathBuf::from(profile)
+                    .join("Documents")
+                    .join("PowerShell")
+                    .join("Microsoft.PowerShell_profile.ps1")
+            } else {
+                home.join("Documents")
+                    .join("PowerShell")
+                    .join("Microsoft.PowerShell_profile.ps1")
+            }
+        }
         _ => home.join(".bashrc"),
     }
 }
 
 fn alias_line(shell: &str) -> &'static str {
-    if shell == "fish" {
-        ALIAS_FISH
-    } else {
-        ALIAS_BASH_ZSH
+    match shell {
+        "fish" => ALIAS_FISH,
+        "powershell" => ALIAS_POWERSHELL,
+        _ => ALIAS_BASH_ZSH,
     }
 }
 
@@ -198,10 +214,12 @@ pub fn interactive_setup(config: &mut Config) {
         let rc_file = get_rc_file(&shell);
         if install_alias(Some(&shell)) {
             print_success(&format!("Alias installed in {}", rc_file.display()));
-            print_dim(&format!(
-                "Restart your shell or run: source {}",
-                rc_file.display()
-            ));
+            let reload_cmd = if shell == "powershell" {
+                format!(". {}", rc_file.display())
+            } else {
+                format!("source {}", rc_file.display())
+            };
+            print_dim(&format!("Restart your shell or run: {}", reload_cmd));
         } else {
             print_dim(&format!("Alias already installed in {}.", rc_file.display()));
         }
