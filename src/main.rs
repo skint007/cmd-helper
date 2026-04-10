@@ -70,9 +70,13 @@ struct Cli {
     #[arg(long = "history-clear")]
     history_clear: bool,
 
-    /// Create the command-helper model on the remote Ollama server
+    /// Create/update the command-helper model on the remote Ollama server
     #[arg(long = "create-model")]
     create_model: bool,
+
+    /// Base model to use with --create-model (default: gpt-oss:20b)
+    #[arg(long = "base-model")]
+    base_model: Option<String>,
 
     /// Create default config file
     #[arg(long = "init-config")]
@@ -157,7 +161,7 @@ async fn main() {
             print_dim("Run: cmd-helper setup");
             process::exit(1);
         }
-        create_model_cmd(&config).await;
+        create_model_cmd(&config, cli.base_model.as_deref()).await;
         return;
     }
 
@@ -309,15 +313,16 @@ fn execute_command(command: &str) {
     }
 }
 
-async fn create_model_cmd(config: &Config) {
+async fn create_model_cmd(config: &Config, base_model: Option<&str>) {
     let model_name = &config.ollama_model;
+    let base = base_model.unwrap_or("gpt-oss:20b");
     println!(
-        "Creating model \x1b[36m{}\x1b[0m on \x1b[36m{}\x1b[0m...",
-        model_name, config.ollama_api_url
+        "Creating model \x1b[36m{}\x1b[0m from \x1b[36m{}\x1b[0m on \x1b[36m{}\x1b[0m...",
+        model_name, base, config.ollama_api_url
     );
 
     let ollama = OllamaClient::new(config);
-    let mut rx = match ollama.create_model(model_name).await {
+    let mut rx = match ollama.create_model(model_name, base).await {
         Ok(rx) => rx,
         Err(e) => {
             display_error(&e);

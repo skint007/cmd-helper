@@ -240,10 +240,10 @@ impl OllamaClient {
         Ok(rx)
     }
 
-    pub async fn create_model(&self, model_name: &str) -> Result<mpsc::Receiver<String>, OllamaError> {
+    pub async fn create_model(&self, model_name: &str, base_model: &str) -> Result<mpsc::Receiver<String>, OllamaError> {
         let payload = json!({
             "model": model_name,
-            "from": "gpt-oss:20b",
+            "from": base_model,
             "system": model_system_prompt(),
             "parameters": {
                 "temperature": 0.3,
