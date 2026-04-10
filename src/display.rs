@@ -186,18 +186,38 @@ pub async fn stream_and_display(
             .template("{spinner} {msg}")
             .unwrap(),
     );
-    spinner.set_message("Thinking...");
+    spinner.set_message("Connecting to Ollama...");
     spinner.enable_steady_tick(std::time::Duration::from_millis(80));
 
     let mut accumulated = Vec::new();
     let mut first_token = true;
+    let start = std::time::Instant::now();
+    let mut showed_loading = false;
 
-    while let Some(token) = rx.recv().await {
-        if first_token {
-            spinner.set_message("Generating response...");
-            first_token = false;
+    loop {
+        let tick = std::time::Duration::from_secs(1);
+        match tokio::time::timeout(tick, rx.recv()).await {
+            Ok(Some(token)) => {
+                if first_token {
+                    spinner.set_message("Generating response...");
+                    first_token = false;
+                }
+                accumulated.push(token);
+            }
+            Ok(None) => break, // stream ended
+            Err(_) => {
+                // No token received within 1s - still waiting
+                if first_token {
+                    let elapsed = start.elapsed().as_secs();
+                    if elapsed >= 5 && !showed_loading {
+                        spinner.set_message("Loading model into memory (this may take a moment)...");
+                        showed_loading = true;
+                    } else if !showed_loading {
+                        spinner.set_message("Waiting for response...");
+                    }
+                }
+            }
         }
-        accumulated.push(token);
     }
 
     spinner.finish_and_clear();

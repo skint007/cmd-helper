@@ -33,6 +33,8 @@ pub struct Config {
     pub output_style: String,
     #[serde(default = "default_true")]
     pub history_enabled: bool,
+    #[serde(default = "default_true")]
+    pub prompt_actions: bool,
     #[serde(skip)]
     pub history_db_path: PathBuf,
 }
@@ -63,6 +65,7 @@ impl Default for Config {
             ollama_timeout: default_timeout(),
             output_style: default_output_style(),
             history_enabled: true,
+            prompt_actions: true,
             history_db_path: history_db_path(),
         }
     }
@@ -101,6 +104,7 @@ impl Config {
         self.ollama_timeout = data.ollama_timeout;
         self.output_style = data.output_style;
         self.history_enabled = data.history_enabled;
+        self.prompt_actions = data.prompt_actions;
     }
 
     fn apply_env(&mut self) {
@@ -150,6 +154,7 @@ impl Config {
             ollama_timeout: u64,
             output_style: String,
             history_enabled: bool,
+            prompt_actions: bool,
         }
 
         let data = ConfigFile {
@@ -159,6 +164,7 @@ impl Config {
             ollama_timeout: self.ollama_timeout,
             output_style: self.output_style.clone(),
             history_enabled: self.history_enabled,
+            prompt_actions: self.prompt_actions,
         };
 
         let yaml = serde_yaml::to_string(&data).map_err(|e| {

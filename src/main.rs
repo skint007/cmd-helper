@@ -243,8 +243,8 @@ async fn main() {
         return;
     }
 
-    // Interactive prompt (only on a real terminal)
-    if std::io::stdout().is_terminal() {
+    // Interactive prompt (only on a real terminal, if enabled)
+    if config.prompt_actions && std::io::stdout().is_terminal() {
         if let Some(action) = prompt_action() {
             match action {
                 "copy" => copy_to_clipboard(&parsed.command),
