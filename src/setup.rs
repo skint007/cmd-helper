@@ -6,7 +6,7 @@ use std::process::Command;
 
 use regex::Regex;
 
-use crate::config::{Config, config_file};
+use crate::config::{Config, Provider, ProviderConfig, config_file};
 use crate::display::{print_dim, print_success, print_warning};
 
 const ALIAS_BEGIN: &str = "# BEGIN cmd-helper";
@@ -137,62 +137,190 @@ fn prompt_input(prompt: &str) -> String {
     input.trim().to_string()
 }
 
+fn mask_key(key: &str) -> String {
+    format!("{}****", &key[..key.len().min(4)])
+}
+
+/// Prompt for the active provider, returning the chosen provider key.
+fn prompt_provider(current: &str) -> String {
+    println!("\x1b[1mProvider:\x1b[0m");
+    println!("  1. Ollama");
+    println!("  2. OpenAI");
+    println!("  3. Anthropic");
+    println!("  4. DeepSeek");
+    println!("  5. OpenAI-compatible (Groq, OpenRouter, LM Studio, ...)");
+    let current_label = Provider::parse(current)
+        .map(|p| p.key())
+        .unwrap_or(current);
+    loop {
+        let input = prompt_input(&format!(
+            "\x1b[1mSelect provider [{}]:\x1b[0m ",
+            current_label
+        ));
+        if input.is_empty() {
+            return current.to_string();
+        }
+        let key = match input.as_str() {
+            "1" => Some("ollama"),
+            "2" => Some("openai"),
+            "3" => Some("anthropic"),
+            "4" => Some("deepseek"),
+            "5" => Some("openai-compatible"),
+            other => Provider::parse(other).map(|p| p.key()),
+        };
+        match key {
+            Some(k) => return k.to_string(),
+            None => print_warning("Invalid provider. Enter a number 1-5 or a name."),
+        }
+    }
+}
+
+fn prompt_model(pc: &mut ProviderConfig, default: &str, required: bool) {
+    let current = pc.model.clone().unwrap_or_default();
+    let shown = if current.is_empty() {
+        default.to_string()
+    } else {
+        current.clone()
+    };
+    loop {
+        let hint = if shown.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", shown)
+        };
+        let v = prompt_input(&format!("\x1b[1mModel name{}:\x1b[0m ", hint));
+        if !v.is_empty() {
+            pc.model = Some(v);
+            return;
+        }
+        if !shown.is_empty() {
+            pc.model = Some(shown);
+            return;
+        }
+        if !required {
+            return;
+        }
+        print_warning("Model is required.");
+    }
+}
+
+/// Prompt for a base URL. `required` rejects empty input when no value exists.
+/// `store_default` controls whether accepting the default writes it into config
+/// (true for Ollama's localhost; false for cloud providers so only the key is saved).
+fn prompt_url(pc: &mut ProviderConfig, label: &str, default: &str, required: bool, store_default: bool) {
+    let current = pc.api_url.clone().unwrap_or_default();
+    let shown = if current.is_empty() {
+        default.to_string()
+    } else {
+        current.clone()
+    };
+    loop {
+        let hint = if shown.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", shown)
+        };
+        let v = prompt_input(&format!("\x1b[1m{}{}:\x1b[0m ", label, hint));
+        if !v.is_empty() {
+            pc.api_url = Some(v);
+            return;
+        }
+        if !current.is_empty() {
+            return; // keep existing value
+        }
+        if !default.is_empty() {
+            if store_default {
+                pc.api_url = Some(default.to_string());
+            }
+            return; // accept default (left unset for cloud)
+        }
+        if !required {
+            return;
+        }
+        print_warning("URL is required.");
+    }
+}
+
+fn prompt_optional_key(pc: &mut ProviderConfig) {
+    let prompt = match &pc.api_key {
+        Some(key) => format!("\x1b[1mAPI key [{}]:\x1b[0m ", mask_key(key)),
+        None => "\x1b[1mAPI key (Enter to skip):\x1b[0m ".to_string(),
+    };
+    let v = prompt_input(&prompt);
+    if !v.is_empty() {
+        pc.api_key = Some(v);
+    }
+}
+
+fn prompt_required_key(pc: &mut ProviderConfig, provider: Provider) {
+    loop {
+        let prompt = match &pc.api_key {
+            Some(key) => format!("\x1b[1mAPI key [{}]:\x1b[0m ", mask_key(key)),
+            None => "\x1b[1mAPI key:\x1b[0m ".to_string(),
+        };
+        let v = prompt_input(&prompt);
+        if !v.is_empty() {
+            pc.api_key = Some(v);
+            return;
+        }
+        if pc.api_key.is_some() {
+            return; // keep existing key
+        }
+        // Allow skipping if the standard env var is set.
+        if let Some(name) = provider.api_key_env() {
+            if env::var(name).map(|v| !v.is_empty()).unwrap_or(false) {
+                print_dim(&format!("Using {} from the environment.", name));
+                return;
+            }
+        }
+        print_warning("API key is required.");
+    }
+}
+
 pub fn interactive_setup(config: &mut Config) {
     println!();
     println!("\x1b[1;36mcmd-helper setup\x1b[0m");
     println!("\x1b[2mConfigure your command-line AI assistant.\x1b[0m");
     println!();
 
-    // Ollama API URL (required)
-    loop {
-        let default_hint = if config.ollama_api_url.is_empty() {
-            String::new()
-        } else {
-            format!(" [{}]", config.ollama_api_url)
-        };
-        let url = prompt_input(&format!("\x1b[1mOllama API URL{}:\x1b[0m ", default_hint));
+    // Provider selection
+    config.provider = prompt_provider(&config.provider);
+    let provider = Provider::parse(&config.provider).unwrap_or(Provider::Ollama);
+    println!();
 
-        if url.is_empty() && !config.ollama_api_url.is_empty() {
-            break;
-        }
-        if !url.is_empty() {
-            config.ollama_api_url = url;
-            break;
-        }
-        print_warning("URL is required.");
-    }
+    // Per-provider settings (work on a copy, then store it back).
+    let mut pc = config.providers.get(&config.provider).cloned().unwrap_or_default();
 
-    // Model name
-    let model = prompt_input(&format!(
-        "\x1b[1mModel name [{}]:\x1b[0m ",
-        config.ollama_model
-    ));
-    if !model.is_empty() {
-        config.ollama_model = model;
-    }
-
-    // API key
-    if let Some(ref key) = config.ollama_api_key {
-        let masked = format!("{}****", &key[..key.len().min(4)]);
-        let api_key = prompt_input(&format!("\x1b[1mAPI key [{}]:\x1b[0m ", masked));
-        if !api_key.is_empty() {
-            config.ollama_api_key = Some(api_key);
+    match provider {
+        Provider::Ollama => {
+            prompt_url(&mut pc, "Ollama API URL", provider.default_api_url(), true, true);
+            prompt_model(&mut pc, provider.default_model(), true);
+            prompt_optional_key(&mut pc);
         }
-    } else {
-        let api_key = prompt_input("\x1b[1mAPI key (Enter to skip):\x1b[0m ");
-        if !api_key.is_empty() {
-            config.ollama_api_key = Some(api_key);
+        Provider::OpenAiCompatible => {
+            prompt_url(&mut pc, "API base URL", provider.default_api_url(), true, true);
+            prompt_model(&mut pc, provider.default_model(), true);
+            prompt_optional_key(&mut pc);
+        }
+        // OpenAI / Anthropic / DeepSeek: key required, sensible URL + model defaults.
+        _ => {
+            prompt_required_key(&mut pc, provider);
+            prompt_model(&mut pc, provider.default_model(), true);
+            prompt_url(&mut pc, "API base URL", provider.default_api_url(), false, false);
         }
     }
 
-    // Timeout
+    config.providers.insert(config.provider.clone(), pc);
+    println!();
+
+    // Timeout (shared across providers)
     let timeout_str = prompt_input(&format!(
         "\x1b[1mRequest timeout in seconds [{}]:\x1b[0m ",
-        config.ollama_timeout
+        config.timeout
     ));
     if !timeout_str.is_empty() {
         if let Ok(t) = timeout_str.parse() {
-            config.ollama_timeout = t;
+            config.timeout = t;
         } else {
             print_warning("Invalid number, keeping default.");
         }
@@ -209,7 +337,7 @@ pub fn interactive_setup(config: &mut Config) {
     }
 
     // Save config
-    if let Err(e) = config.save_default_config() {
+    if let Err(e) = config.save() {
         print_warning(&format!("Failed to save config: {}", e));
     } else {
         println!();
@@ -242,9 +370,11 @@ pub fn interactive_setup(config: &mut Config) {
     print_success("Setup complete!");
     println!();
     print_dim("Next steps:");
-    println!(
-        "  \x1b[36mcmd-helper --create-model\x1b[0m  Create the AI model on your Ollama server"
-    );
+    if provider == Provider::Ollama {
+        println!(
+            "  \x1b[36mcmd-helper --create-model\x1b[0m  Create the AI model on your Ollama server"
+        );
+    }
     println!(
         "  \x1b[36m?? find files larger than 100MB\x1b[0m  Try your first query"
     );

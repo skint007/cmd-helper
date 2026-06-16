@@ -2,7 +2,7 @@
 name = "cmd-helper"
 version = "0.4.2"
 edition = "2024"
-description = "AI-powered command-line helper using Ollama"
+description = "AI-powered command-line helper for Ollama, OpenAI, Anthropic, and DeepSeek"
 license = "MIT"
 authors = ["skint007"]
 

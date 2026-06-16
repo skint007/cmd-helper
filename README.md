@@ -1,6 +1,8 @@
 # cmd-helper
 
-AI-powered command-line helper that translates natural language into shell commands using [Ollama](https://ollama.com).
+AI-powered command-line helper that translates natural language into shell commands.
+
+Works with a local/remote [Ollama](https://ollama.com) server or a cloud provider — **OpenAI**, **Anthropic**, **DeepSeek**, or any **OpenAI-compatible** endpoint (Groq, OpenRouter, LM Studio, vLLM, ...).
 
 Ask a question in plain English and get the right command with an explanation.
 
@@ -23,6 +25,7 @@ $ ?? find files larger than 100MB
 ## Features
 
 - Natural language to shell command translation
+- Multiple providers: Ollama, OpenAI, Anthropic, DeepSeek, or any OpenAI-compatible endpoint
 - Streaming response display with formatted output
 - OS and shell auto-detection for context-aware suggestions
 - Interactive prompt to copy or run the suggested command
@@ -32,7 +35,10 @@ $ ?? find files larger than 100MB
 
 ## Requirements
 
-- An [Ollama](https://ollama.com) server (local or remote)
+One of:
+
+- An [Ollama](https://ollama.com) server (local or remote), **or**
+- An API key for OpenAI, Anthropic, DeepSeek, or another OpenAI-compatible service
 
 ## Installation
 
@@ -55,24 +61,38 @@ Pre-built binaries for Linux (x86_64, aarch64), macOS (x86_64, aarch64), and Win
 
 ## Setup
 
-Run the interactive setup to configure your Ollama connection and install the `??` alias:
+Run the interactive setup to choose a provider, configure credentials, and install the `??` alias:
 
 ```sh
 cmd-helper setup
 ```
 
 This will prompt for:
-- Ollama API URL (e.g. `http://localhost:11434`)
-- Model name (default: `command-helper` on Linux, `command-helper-windows` on Windows)
-- API key (optional, for remote/authenticated servers)
+- Provider (Ollama, OpenAI, Anthropic, DeepSeek, or OpenAI-compatible)
+- API key (required for cloud providers; optional for Ollama)
+- Model name (sensible default per provider — e.g. `claude-opus-4-8` for Anthropic, `gpt-4o-mini` for OpenAI)
+- API base URL (defaults to the provider's public endpoint; required for Ollama and OpenAI-compatible)
 - Request timeout
 - Output style (fancy or simple)
 - `??` shell alias installation (bash, zsh, fish, PowerShell)
 
-Then create the AI model on your Ollama server:
+### Ollama
+
+Ollama uses a small fine-tuned model. After setup, create it on your server:
 
 ```sh
 cmd-helper --create-model
+```
+
+Cloud providers (OpenAI, Anthropic, DeepSeek) use hosted models, so no model creation is needed — just set an API key.
+
+### Switching providers
+
+Each provider's settings are stored separately, so you can switch without re-entering keys:
+
+```sh
+cmd-helper -p anthropic find files larger than 100MB   # one-off override
+cmd-helper setup                                        # change the default provider
 ```
 
 ## Usage
@@ -97,15 +117,17 @@ cmd-helper -r list open ports       # run immediately
 Usage: cmd-helper [OPTIONS] [QUERY]...
 
 Options:
-  -m, --model <MODEL>              Ollama model name
-  -u, --url <URL>                  Ollama API URL
+  -p, --provider <PROVIDER>        Provider: ollama, openai, anthropic, deepseek, openai-compatible
+  -m, --model <MODEL>              Model name
+  -u, --url <URL>                  API base URL
+      --api-key <API_KEY>          API key (overrides config for this run)
   -t, --timeout <TIMEOUT>          Request timeout (seconds)
   -r, --run                        Execute the suggested command
   -c, --copy                       Copy command to clipboard
   -H, --history                    Show recent command history
   -s, --history-search <TERM>      Search command history
       --history-clear              Clear command history
-      --create-model               Create the AI model on the Ollama server
+      --create-model               Create the AI model on the Ollama server (Ollama only)
       --init-config                Create default config file
       --no-detect                  Skip OS/shell detection
       --simple                     Use simple output format
@@ -123,25 +145,51 @@ cmd-helper remove-alias     # Remove the ?? alias
 
 ## Configuration
 
-Config is stored at `~/.config/cmd-helper/config.yaml`:
+Config is stored at `~/.config/cmd-helper/config.yaml`. The `provider:` key selects the active
+provider, and each provider's settings live under `providers:`, so you can keep several configured
+at once and switch between them:
 
 ```yaml
-ollama_model: command-helper
-ollama_api_url: http://localhost:11434
-ollama_api_key: null
-ollama_timeout: 10
+provider: anthropic
+providers:
+  ollama:
+    model: command-helper
+    api_url: http://localhost:11434
+  openai:
+    model: gpt-4o-mini
+    api_key: sk-...
+  anthropic:
+    model: claude-opus-4-8
+    api_key: sk-ant-...
+  deepseek:
+    model: deepseek-chat
+    api_key: sk-...
+  openai-compatible:
+    api_url: https://openrouter.ai/api/v1
+    model: anthropic/claude-3.5-sonnet
+    api_key: sk-or-...
+timeout: 10
 output_style: fancy
 history_enabled: true
+prompt_actions: true
 ```
 
-Environment variables override the config file:
+Per provider, any unset field falls back to a default: the public API base URL, a sensible default
+model, and (for cloud providers) the standard API-key environment variable. Legacy flat `ollama_*`
+keys from older versions are still read and migrated automatically.
+
+Environment variables override the config file. The generic ones apply to the **active** provider:
 
 | Variable | Description |
 |---|---|
+| `CMD_HELPER_PROVIDER` | Active provider |
 | `CMD_HELPER_MODEL` | Model name |
-| `CMD_HELPER_API_URL` | Ollama API URL |
+| `CMD_HELPER_API_URL` | API base URL |
 | `CMD_HELPER_API_KEY` | API key |
 | `CMD_HELPER_TIMEOUT` | Timeout in seconds |
+
+Cloud providers also pick up their standard key variables when no key is set in config:
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`.
 
 ## License
 

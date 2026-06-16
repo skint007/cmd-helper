@@ -1,13 +1,14 @@
-# Maintainer: skint007
+# Maintainer: skint007 <archlinux.repose742@passmail.net>
+# Built from source by the `paw` personal repo CI (not the official AUR).
 pkgname=cmd-helper
-pkgver=0.4.2
+pkgver=0.0.0
 pkgrel=1
-pkgdesc="AI-powered command-line helper using Ollama"
+pkgdesc="AI-powered command-line helper for Ollama, OpenAI, Anthropic, and DeepSeek"
 arch=('x86_64')
 url="https://github.com/skint007/cmd-helper"
 license=('MIT')
-depends=('gcc-libs')
-makedepends=('cargo' 'gcc')
+depends=('gcc-libs' 'glibc')
+makedepends=('git' 'rust')
 optdepends=(
     'jq: JSON processing commands'
     'tree: directory tree listing'
@@ -20,24 +21,33 @@ optdepends=(
     'xclip: clipboard support for X11'
     'wl-clipboard: clipboard support for Wayland'
 )
-# TODO: Switch to GitHub source for AUR submission:
-# source=("$pkgname-$pkgver.tar.gz::https://github.com/skint007/cmd-helper/archive/v$pkgver.tar.gz")
-# sha256sums=('SKIP')
-source=()
-sha256sums=()
-_srcdir="/home/skint007/Dropbox/projects/rust/cmd-helper"
+conflicts=('cmd-helper-bin' 'cmd-helper-git')
+options=('!debug')   # don't split out a separate -debug package
+source=("git+https://github.com/skint007/cmd-helper.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$srcdir/cmd-helper"
+    # Clean base version (from Cargo.toml) + a monotonic git suffix, e.g. 0.4.2.r84.a1b2c3d.
+    # Every commit bumps the version, so a paw rebuild always reads as an update.
+    local v r h
+    v=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+    r=$(git rev-list --count HEAD)
+    h=$(git rev-parse --short=7 HEAD)
+    printf '%s.r%s.%s' "$v" "$r" "$h"
+}
 
 build() {
-    cd "$_srcdir"
+    cd "$srcdir/cmd-helper"
     export RUSTUP_TOOLCHAIN=stable
     export CARGO_TARGET_DIR=target
-    # Prevent makepkg's CFLAGS/LDFLAGS from breaking bundled C compilation (SQLite)
+    # Prevent makepkg's CFLAGS/LDFLAGS from breaking bundled C compilation (SQLite via rusqlite).
     unset CFLAGS CXXFLAGS LDFLAGS
     cargo build --release --locked
 }
 
 package() {
-    cd "$_srcdir"
+    cd "$srcdir/cmd-helper"
     install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

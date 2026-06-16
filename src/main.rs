@@ -5,14 +5,13 @@ mod history;
 mod setup;
 mod system_info;
 
-use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::process;
 
 use clap::Parser;
 
-use client::OllamaClient;
-use config::Config;
+use client::LlmClient;
+use config::{Config, Overrides, Provider};
 use display::{
     display_error, print_dim, print_history_table, print_success, print_warning,
     prompt_action, stream_and_display,
@@ -38,13 +37,21 @@ struct Cli {
     #[arg(short = 'V', long = "version")]
     version: bool,
 
-    /// Ollama model name
+    /// Provider: ollama, openai, anthropic, deepseek, openai-compatible
+    #[arg(short = 'p', long)]
+    provider: Option<String>,
+
+    /// Model name
     #[arg(short, long)]
     model: Option<String>,
 
-    /// Ollama API URL
+    /// API base URL
     #[arg(short, long)]
     url: Option<String>,
+
+    /// API key (overrides config for this run)
+    #[arg(long = "api-key")]
+    api_key: Option<String>,
 
     /// Request timeout (seconds)
     #[arg(short, long)]
@@ -95,19 +102,13 @@ struct Cli {
 async fn main() {
     let cli = Cli::parse();
 
-    let mut overrides = HashMap::new();
-    overrides.insert(
-        "ollama_model",
-        cli.model.clone(),
-    );
-    overrides.insert(
-        "ollama_api_url",
-        cli.url.clone(),
-    );
-    overrides.insert(
-        "ollama_timeout",
-        cli.timeout.map(|t| t.to_string()),
-    );
+    let overrides = Overrides {
+        provider: cli.provider.clone(),
+        model: cli.model.clone(),
+        api_url: cli.url.clone(),
+        api_key: cli.api_key.clone(),
+        timeout: cli.timeout,
+    };
 
     let mut config = Config::load(overrides);
 
@@ -117,7 +118,7 @@ async fn main() {
     }
 
     if cli.init_config {
-        if let Err(e) = config.save_default_config() {
+        if let Err(e) = config.save() {
             print_warning(&format!("Failed to save config: {}", e));
             process::exit(1);
         }
@@ -156,9 +157,13 @@ async fn main() {
     }
 
     if cli.create_model {
+        if config.provider() != Some(Provider::Ollama) {
+            print_warning("--create-model is only supported for the Ollama provider.");
+            print_dim("Cloud providers (OpenAI, Anthropic, DeepSeek) use hosted models — no setup needed.");
+            process::exit(1);
+        }
         if !config.is_configured() {
-            print_warning("No Ollama URL configured.");
-            print_dim("Run: cmd-helper setup");
+            warn_not_configured(&config);
             process::exit(1);
         }
         create_model_cmd(&config, cli.base_model.as_deref()).await;
@@ -188,8 +193,7 @@ async fn main() {
     }
 
     if !config.is_configured() {
-        print_warning("No Ollama URL configured.");
-        print_dim("Run: cmd-helper setup");
+        warn_not_configured(&config);
         process::exit(1);
     }
 
@@ -210,8 +214,14 @@ async fn main() {
         &config.output_style
     };
 
-    let ollama = OllamaClient::new(&config);
-    let rx = match ollama.generate_stream(&query_text, &system_context).await {
+    let client = match LlmClient::new(&config) {
+        Ok(c) => c,
+        Err(e) => {
+            display_error(&e);
+            process::exit(1);
+        }
+    };
+    let rx = match client.generate_stream(&query_text, &system_context).await {
         Ok(rx) => rx,
         Err(e) => {
             display_error(&e);
@@ -219,7 +229,11 @@ async fn main() {
         }
     };
 
-    let parsed = stream_and_display(rx, style).await;
+    let label = config
+        .provider()
+        .map(|p| p.display_name())
+        .unwrap_or("the model");
+    let parsed = stream_and_display(rx, style, label).await;
 
     if parsed.command.is_empty() {
         process::exit(1);
@@ -313,16 +327,41 @@ fn execute_command(command: &str) {
     }
 }
 
+fn warn_not_configured(config: &Config) {
+    match config.provider() {
+        None => {
+            print_warning(&format!("Unknown provider '{}'.", config.provider));
+            print_dim("Valid providers: ollama, openai, anthropic, deepseek, openai-compatible");
+        }
+        Some(p) if p.requires_api_key() => {
+            print_warning(&format!("No API key configured for {}.", p.display_name()));
+            print_dim("Run: cmd-helper setup");
+        }
+        Some(p) => {
+            print_warning(&format!("{} is not configured.", p.display_name()));
+            print_dim("Run: cmd-helper setup");
+        }
+    }
+}
+
 async fn create_model_cmd(config: &Config, base_model: Option<&str>) {
-    let model_name = &config.ollama_model;
+    let model_name = config.active_model();
     let base = base_model.unwrap_or("gpt-oss:20b");
     println!(
         "Creating model \x1b[36m{}\x1b[0m from \x1b[36m{}\x1b[0m on \x1b[36m{}\x1b[0m...",
-        model_name, base, config.ollama_api_url
+        model_name,
+        base,
+        config.active_api_url()
     );
 
-    let ollama = OllamaClient::new(config);
-    let mut rx = match ollama.create_model(model_name, base).await {
+    let client = match LlmClient::new(config) {
+        Ok(c) => c,
+        Err(e) => {
+            display_error(&e);
+            process::exit(1);
+        }
+    };
+    let mut rx = match client.create_model(&model_name, base).await {
         Ok(rx) => rx,
         Err(e) => {
             display_error(&e);

@@ -1,4 +1,9 @@
 /target
+# makepkg artifacts from local `cd aur && makepkg` runs
 aur/pkg/
 aur/src/
 aur/*.pkg.tar*
+aur/*.tar.gz
+aur/.SRCINFO
+# makepkg's bare git source clone of this repo
+aur/cmd-helper/

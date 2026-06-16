@@ -178,6 +178,7 @@ fn render_explanation_simple(explanation: &str) {
 pub async fn stream_and_display(
     mut rx: mpsc::Receiver<String>,
     output_style: &str,
+    label: &str,
 ) -> ParsedResponse {
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(
@@ -186,7 +187,7 @@ pub async fn stream_and_display(
             .template("{spinner} {msg}")
             .unwrap(),
     );
-    spinner.set_message("Connecting to Ollama...");
+    spinner.set_message(format!("Connecting to {}...", label));
     spinner.enable_steady_tick(std::time::Duration::from_millis(80));
 
     let mut accumulated = Vec::new();
@@ -210,7 +211,7 @@ pub async fn stream_and_display(
                 if first_token {
                     let elapsed = start.elapsed().as_secs();
                     if elapsed >= 5 && !showed_loading {
-                        spinner.set_message("Loading model into memory (this may take a moment)...");
+                        spinner.set_message("Still working (warming up the model may take a moment)...");
                         showed_loading = true;
                     } else if !showed_loading {
                         spinner.set_message("Waiting for response...");
@@ -246,13 +247,14 @@ pub async fn stream_and_display(
     parsed
 }
 
-pub fn display_error(error: &crate::client::OllamaError) {
-    use crate::client::OllamaError;
+pub fn display_error(error: &crate::client::ClientError) {
+    use crate::client::ClientError;
     let (title, color) = match error {
-        OllamaError::Connection(_) => ("Connection Error", Color::Red),
-        OllamaError::ModelNotFound(_) => ("Model Not Found", Color::Yellow),
-        OllamaError::Timeout(_) => ("Timeout", Color::Yellow),
-        OllamaError::Api(_) => ("API Error", Color::Red),
+        ClientError::Connection(_) => ("Connection Error", Color::Red),
+        ClientError::ModelNotFound(_) => ("Model Not Found", Color::Yellow),
+        ClientError::Timeout(_) => ("Timeout", Color::Yellow),
+        ClientError::Auth(_) => ("Authentication Error", Color::Red),
+        ClientError::Api(_) => ("API Error", Color::Red),
     };
     let mut stdout = io::stdout();
     let _ = execute!(
